@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>社内写真共有</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 20px; background: #f4f4f9; }
+        .container { max-width: 800px; margin: auto; }
+        .upload-form { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .upload-form input, .upload-form button { margin-top: 10px; padding: 10px; width: 100%; box-sizing: border-box; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
+        .photo-card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+        .photo-card img { width: 100%; height: 150px; object-fit: cover; }
+        .photo-info { padding: 10px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📷 社内写真共有</h2>
+        
+        <div class="upload-form">
+            <form action="/upload" method="POST" enctype="multipart/form-data">
+                <input type="file" name="photo" accept="image/*" required>
+                <input type="text" name="title" placeholder="写真のタイトルやメモ">
+                <input type="text" name="uploader" placeholder="あなたの名前">
+                <button type="submit">アップロード</button>
+            </form>
+        </div>
+
+        <div class="gallery" id="gallery">
+            </div>
+    </div>
+
+    <script>
+        // ページ読み込み時に写真リストを取得
+        fetch('/api/photos')
+            .then(response => response.json())
+            .then(photos => {
+                const gallery = document.getElementById('gallery');
+                photos.forEach(photo => {
+                    // 写真カードのHTMLを作成
+                    const card = document.createElement('div');
+                    card.className = 'photo-card';
+                    card.innerHTML = `
+                        <img src="/api/image/${photo.id}" alt="${photo.title}">
+                        <div class="photo-info">
+                            <strong>${photo.title}</strong><br>
+                            👤 ${photo.uploaded_by}
+                        </div>
+                    `;
+                    gallery.appendChild(card);
+                });
+            });
+    </script>
+</body>
+</html>
