@@ -112,3 +112,5 @@ app.post('/api/admin/locations', async (req, res) => {
         res.status(500).send('アップ場所の作成に失敗しました');
     }
 });
+
+app.listen(port, () => console.log(`サーバー起動: http://localhost:${port}`));
