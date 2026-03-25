@@ -70,6 +70,13 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
+                    // ★追加：管理者の場合は admin.html に画面を移動させる
+                    if (data.isAdmin) {
+                        window.location.href = '/admin.html';
+                        return; // ここで下の処理に行かないようにストップ
+                    }
+
+                    // 一般ユーザー（ルーム）の場合の処理
                     currentRoom = data.room;
                     document.getElementById('loginArea').style.display = 'none';
                     document.getElementById('appArea').style.display = 'block';

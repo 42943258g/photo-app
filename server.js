@@ -20,13 +20,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ↓↓↓ ここから追加（古いテスト用テーブルのお掃除） ↓↓↓
-const dropOldTableQuery = `DROP TABLE IF EXISTS shared_photos;`;
-
-pool.query(dropOldTableQuery)
-    .then(() => console.log('🗑️ 古いテスト用テーブル（shared_photos）を完全に削除しました！'))
-    .catch(err => console.error('テーブル削除エラー:', err));
-// ↑↑↑ ここまで追加 ↑↑↑
 
 // --- データベースの再構築（3つのテーブルを作成） ---
 const createTablesQuery = `
@@ -128,10 +121,17 @@ app.post('/api/admin/locations', async (req, res) => {
 // --- API: ログイン処理 ---
 app.post('/api/login', async (req, res) => {
     const { loginId, loginPass } = req.body;
+
+    // ★追加：管理者用の特別ログイン（IDとパスワードは自由に変更してください！）
+    if (loginId === 'admin' && loginPass === 'admin123') {
+        return res.json({ success: true, isAdmin: true });
+    }
+
     try {
         const result = await pool.query('SELECT id, name FROM rooms WHERE login_id = $1 AND login_pass = $2', [loginId, loginPass]);
         if (result.rows.length > 0) {
-            res.json({ success: true, room: result.rows[0] });
+            // 一般ユーザーの場合は isAdmin: false を返す
+            res.json({ success: true, isAdmin: false, room: result.rows[0] });
         } else {
             res.status(401).json({ success: false, message: 'IDまたはパスワードが違います' });
         }
