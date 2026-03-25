@@ -12,6 +12,22 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// ↓↓↓ ここから追加 ↓↓↓
+const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS shared_photos (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255),
+        image_data BYTEA NOT NULL,
+        mime_type VARCHAR(50) NOT NULL,
+        uploaded_by VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`;
+pool.query(createTableQuery)
+    .then(() => console.log('データベースのテーブル準備完了！'))
+    .catch(err => console.error('テーブル作成エラー:', err));
+// ↑↑↑ ここまで追加 ↑↑↑
+
 // ファイルをディスクに保存せず、一時的にメモリに置く設定（DB直行のため）
 const upload = multer({ storage: multer.memoryStorage() });
 
