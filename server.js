@@ -144,6 +144,43 @@ app.post('/api/admin/locations', async (req, res) => {
     }
 });
 
+// --- API: 管理画面用 場所の名前を変更（保存） ---
+app.put('/api/admin/locations/:id', async (req, res) => {
+    try {
+        await pool.query('UPDATE locations SET name = $1 WHERE id = $2', [req.body.name, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).send('更新に失敗しました');
+    }
+});
+
+// --- API: 管理画面用 場所を削除 ---
+app.delete('/api/admin/locations/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM locations WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).send('削除に失敗しました');
+    }
+});
+
+// --- API: 現場画面用 そのルームの全写真を一気に取得 ---
+app.get('/api/photos/room/:roomId', async (req, res) => {
+    try {
+        const query = `
+            SELECT np.id, np.location_id, np.title, np.uploaded_by, np.created_at
+            FROM new_photos np
+            JOIN locations l ON np.location_id = l.id
+            WHERE l.room_id = $1
+            ORDER BY np.created_at DESC
+        `;
+        const result = await pool.query(query, [req.params.roomId]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).send('写真の取得に失敗');
+    }
+});
+
 // ==========================================
 // 一般ユーザー用 API（ここから追加）
 // ==========================================

@@ -69,13 +69,30 @@
 
                     rooms.forEach(room => {
                         roomSelect.innerHTML += `<option value="${room.id}">${room.name}</option>`;
-                        const locationsHtml = room.locations.map(loc => `<li>${loc.name}</li>`).join('');
+                        
+                        // ★ここを変更：リスト(li)ではなく、編集可能なシート(table)形式にする
+                        let locationsSheet = '<span style="color:#aaa;">(なし)</span>';
+                        if (room.locations && room.locations.length > 0) {
+                            locationsSheet = `<table style="width:100%; background:#fff; color:#000; margin:0;">
+                                ${room.locations.map(loc => `
+                                    <tr>
+                                        <td style="padding:5px; border:1px solid #ccc;">
+                                            <input type="text" id="loc_name_${loc.id}" value="${loc.name}" style="width:100%; margin:0; padding:5px; font-size:14px;">
+                                        </td>
+                                        <td style="width: 110px; padding:5px; border:1px solid #ccc; text-align:center;">
+                                            <button onclick="updateLocation(${loc.id})" style="background:#28a745; color:#fff; padding:5px; margin:0; font-size:12px; border:none; border-radius:3px; cursor:pointer;">保存</button>
+                                            <button onclick="deleteLocation(${loc.id})" style="background:#dc3545; color:#fff; padding:5px; margin:0; font-size:12px; border:none; border-radius:3px; cursor:pointer;">削除</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </table>`;
+                        }
 
                         tbody.innerHTML += `
                             <tr>
                                 <td><strong>${room.name}</strong></td>
                                 <td>ID: <span class="credentials">${room.login_id}</span><br>PW: <span class="credentials">${room.login_pass}</span></td>
-                                <td>${locationsHtml ? `<ul>${locationsHtml}</ul>` : '<span style="color:#aaa;">(なし)</span>'}</td>
+                                <td style="padding:0;">${locationsSheet}</td>
                                 <td>
                                     <button class="btn-action btn-copy" onclick="copyInfo('${room.name}', '${room.login_id}', '${room.login_pass}')">📋 メール用にコピー</button><br>
                                     <button class="btn-action btn-enter" onclick="enterRoom('${room.login_id}', '${room.login_pass}')">🚪 このルームに入る</button>
@@ -85,6 +102,24 @@
                     });
                 });
         }
+
+        // --- 追加：場所の変更を保存 ---
+        function updateLocation(id) {
+            const newName = document.getElementById(`loc_name_${id}`).value;
+            fetch(`/api/admin/locations/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName })
+            }).then(() => alert('保存しました！'));
+        }
+
+        // --- 追加：場所を削除 ---
+        function deleteLocation(id) {
+            if (!confirm('本当にこの場所を削除しますか？\n（※中の写真も消えてしまいます）')) return;
+            fetch(`/api/admin/locations/${id}`, { method: 'DELETE' })
+                .then(() => loadRooms());
+        }
+
 
         function createRoom() {
             const name = document.getElementById('roomName').value;

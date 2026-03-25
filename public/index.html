@@ -8,21 +8,21 @@
         body { font-family: sans-serif; margin: 0; padding: 20px; background: #f4f4f9; color: #333; }
         .container { max-width: 600px; margin: auto; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        input, button, select { width: 100%; padding: 10px; margin-top: 10px; box-sizing: border-box; font-size: 16px; }
+        input, button { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; font-size: 16px; }
         button { background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
         button.danger { background: #cc0000; margin-top: 5px; padding: 5px; font-size: 12px; }
-        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 20px; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px; }
         .photo-card { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 5px; text-align: center; }
-        .photo-card img { width: 100%; height: 120px; object-fit: cover; border-radius: 4px; }
+        .photo-card img { width: 100%; height: 100px; object-fit: cover; border-radius: 4px; }
         .photo-info { font-size: 12px; margin-top: 5px; }
+        .location-block { background: #fff; padding: 15px; border-radius: 8px; border: 2px solid #0066cc; margin-bottom: 20px; }
+        .location-header { margin: 0 0 10px 0; color: #0066cc; font-size: 18px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        
         <div id="loginArea" class="card">
             <h2>🔐 現場ログイン</h2>
-            <p>管理者から共有されたIDとパスワードを入力してください。</p>
             <input type="text" id="loginId" placeholder="ログインID">
             <input type="password" id="loginPass" placeholder="パスワード">
             <button onclick="login()">ログイン</button>
@@ -34,23 +34,12 @@
                 <button onclick="logout()" style="width: auto; background: #666; padding: 5px 10px; margin: 0;">ログアウト</button>
             </div>
 
-            <div class="card">
-                <label>📂 アップ場所（フォルダ）を選択:</label>
-                <select id="locationSelect" onchange="loadPhotos()"></select>
-                
-                <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
-                
-                <label>📷 写真をアップロード:</label>
-                <form id="uploadForm">
-                    <input type="file" id="photoInput" accept="image/*" required>
-                    <input type="text" id="photoTitle" placeholder="写真のメモ・タイトル">
-                    <input type="text" id="uploaderName" placeholder="あなたの名前">
-                    <button type="submit" style="background: #28a745;">アップロード</button>
-                </form>
+            <div class="card" style="padding: 10px 20px;">
+                <label style="font-size: 14px; font-weight: bold;">👤 投稿者名（全員共通で使われます）:</label>
+                <input type="text" id="globalUploaderName" placeholder="あなたの名前を入力してください">
             </div>
 
-            <div id="gallery" class="gallery">
-                </div>
+            <div id="locationsContainer"></div>
         </div>
     </div>
 
@@ -62,26 +51,18 @@
             const idParam = params.get('id');
             const passParam = params.get('pass');
             const autoParam = params.get('auto');
-
-            // URLにIDが含まれていたら、入力欄に自動でセットする
-            if (idParam) {
-                document.getElementById('loginId').value = idParam;
-            }
-            if (passParam) {
-                document.getElementById('loginPass').value = passParam;
-            }
-
-            // もし「管理者画面からの直接入室（auto=true）」なら、自動でログインボタンを押したことにする
-            if (autoParam === 'true' && idParam && passParam) {
-                login();
-            }
+            if (idParam) document.getElementById('loginId').value = idParam;
+            if (passParam) document.getElementById('loginPass').value = passParam;
+            if (autoParam === 'true' && idParam && passParam) login();
         });
 
-        // --- ログイン処理 ---
         function login() {
             const id = document.getElementById('loginId').value;
             const pass = document.getElementById('loginPass').value;
-
+            if (id === 'admin' && pass === 'admin123') {
+                window.location.href = '/admin.html';
+                return;
+            }
             fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -90,104 +71,107 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    // ★追加：管理者の場合は admin.html に画面を移動させる
-                    if (data.isAdmin) {
-                        window.location.href = '/admin.html';
-                        return; // ここで下の処理に行かないようにストップ
-                    }
-
-                    // 一般ユーザー（ルーム）の場合の処理
                     currentRoom = data.room;
                     document.getElementById('loginArea').style.display = 'none';
                     document.getElementById('appArea').style.display = 'block';
                     document.getElementById('roomTitle').innerText = currentRoom.name;
-                    loadLocations(); // 場所リストを読み込む
+                    buildLocationBlocks(); // 画面を作る
                 } else {
                     alert(data.message);
                 }
             });
         }
 
-        // --- ログアウト処理 ---
         function logout() {
-            currentRoom = null;
-            document.getElementById('loginId').value = '';
-            document.getElementById('loginPass').value = '';
-            document.getElementById('loginArea').style.display = 'block';
-            document.getElementById('appArea').style.display = 'none';
-            document.getElementById('gallery').innerHTML = '';
+            window.location.reload(); // リロードして初期化
         }
 
-        // --- アップ場所の読み込み ---
-        function loadLocations() {
+        // --- 場所ごとのブロックを画面にズラッと作る ---
+        function buildLocationBlocks() {
             fetch(`/api/locations/${currentRoom.id}`)
                 .then(res => res.json())
                 .then(locations => {
-                    const select = document.getElementById('locationSelect');
-                    select.innerHTML = '<option value="">▼ 選択してください</option>';
+                    const container = document.getElementById('locationsContainer');
+                    container.innerHTML = ''; // 一旦クリア
+                    
                     locations.forEach(loc => {
-                        select.innerHTML += `<option value="${loc.id}">${loc.name}</option>`;
-                    });
-                });
-        }
+                        container.innerHTML += `
+                            <div class="location-block">
+                                <h3 class="location-header">📂 ${loc.name}</h3>
+                                
+                                <form onsubmit="uploadPhoto(event, ${loc.id})" style="background: #f9f9f9; padding: 10px; border-radius: 4px;">
+                                    <div style="display: flex; gap: 5px;">
+                                        <input type="file" id="file_${loc.id}" accept="image/*" required style="flex: 2; margin-top: 0; padding: 5px;">
+                                        <input type="text" id="title_${loc.id}" placeholder="メモ(任意)" style="flex: 1; margin-top: 0; padding: 5px;">
+                                    </div>
+                                    <button type="submit" style="background: #28a745; margin-top: 5px; padding: 8px;">⇧ 「${loc.name}」にアップロード</button>
+                                </form>
 
-        // --- 写真の読み込み ---
-        function loadPhotos() {
-            const locationId = document.getElementById('locationSelect').value;
-            const gallery = document.getElementById('gallery');
-            gallery.innerHTML = ''; // 一旦クリア
-            
-            if (!locationId) return;
-
-            fetch(`/api/photos/${locationId}`)
-                .then(res => res.json())
-                .then(photos => {
-                    photos.forEach(photo => {
-                        gallery.innerHTML += `
-                            <div class="photo-card">
-                                <img src="/api/image/new/${photo.id}" alt="${photo.title}">
-                                <div class="photo-info">
-                                    <strong>${photo.title}</strong><br>👤 ${photo.uploaded_by}
-                                </div>
-                                <button class="danger" onclick="deletePhoto(${photo.id})">削除</button>
+                                <div id="gallery_${loc.id}" class="gallery"></div>
                             </div>
                         `;
                     });
+                    loadAllPhotos(); // 全部の写真を読み込んで振り分ける
                 });
         }
 
-        // --- 写真のアップロード ---
-        document.getElementById('uploadForm').addEventListener('submit', function(e) {
-            e.preventDefault(); // 画面の再読み込みを防ぐ
+        // --- 写真をアップロード ---
+        function uploadPhoto(event, locationId) {
+            event.preventDefault(); // 画面遷移ストップ
             
-            const locationId = document.getElementById('locationSelect').value;
-            if (!locationId) return alert('アップ場所を選択してください');
+            const fileInput = document.getElementById(`file_${locationId}`);
+            const titleInput = document.getElementById(`title_${locationId}`);
+            const uploaderName = document.getElementById('globalUploaderName').value || '名無しさん';
 
             const formData = new FormData();
-            formData.append('photo', document.getElementById('photoInput').files[0]);
+            formData.append('photo', fileInput.files[0]);
             formData.append('locationId', locationId);
-            formData.append('title', document.getElementById('photoTitle').value);
-            formData.append('uploader', document.getElementById('uploaderName').value);
+            formData.append('title', titleInput.value);
+            formData.append('uploader', uploaderName);
 
             fetch('/api/upload', { method: 'POST', body: formData })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
-                        document.getElementById('photoInput').value = '';
-                        document.getElementById('photoTitle').value = '';
-                        loadPhotos(); // ギャラリーを更新
+                        fileInput.value = ''; // 入力欄を空に
+                        titleInput.value = '';
+                        loadAllPhotos(); // ギャラリーを更新
                     }
                 });
-        });
+        }
+
+        // --- ルーム内の全写真を読み込んで、各場所のギャラリーに振り分ける ---
+        function loadAllPhotos() {
+            fetch(`/api/photos/room/${currentRoom.id}`)
+                .then(res => res.json())
+                .then(photos => {
+                    // まず全てのギャラリーを空にする
+                    document.querySelectorAll('.gallery').forEach(g => g.innerHTML = '');
+
+                    photos.forEach(photo => {
+                        const targetGallery = document.getElementById(`gallery_${photo.location_id}`);
+                        if (targetGallery) {
+                            targetGallery.innerHTML += `
+                                <div class="photo-card">
+                                    <img src="/api/image/new/${photo.id}" alt="${photo.title}">
+                                    <div class="photo-info">
+                                        <strong>${photo.title}</strong><br>👤 ${photo.uploaded_by}
+                                    </div>
+                                    <button class="danger" onclick="deletePhoto(${photo.id})">削除</button>
+                                </div>
+                            `;
+                        }
+                    });
+                });
+        }
 
         // --- 写真の削除 ---
         function deletePhoto(id) {
             if (!confirm('本当にこの画像を削除しますか？')) return;
-
             fetch(`/api/photos/${id}`, { method: 'DELETE' })
                 .then(res => res.json())
                 .then(data => {
-                    if (data.success) loadPhotos(); // ギャラリーを更新
+                    if (data.success) loadAllPhotos(); // 更新
                 });
         }
     </script>
