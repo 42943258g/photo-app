@@ -57,6 +57,26 @@
     <script>
         let currentRoom = null;
 
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const idParam = params.get('id');
+            const passParam = params.get('pass');
+            const autoParam = params.get('auto');
+
+            // URLにIDが含まれていたら、入力欄に自動でセットする
+            if (idParam) {
+                document.getElementById('loginId').value = idParam;
+            }
+            if (passParam) {
+                document.getElementById('loginPass').value = passParam;
+            }
+
+            // もし「管理者画面からの直接入室（auto=true）」なら、自動でログインボタンを押したことにする
+            if (autoParam === 'true' && idParam && passParam) {
+                login();
+            }
+        });
+
         // --- ログイン処理 ---
         function login() {
             const id = document.getElementById('loginId').value;

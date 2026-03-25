@@ -8,12 +8,16 @@
         body { font-family: sans-serif; margin: 0; padding: 20px; background: #333; color: white; }
         .container { max-width: 900px; margin: auto; }
         .card { background: #444; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        input, button, select { padding: 10px; font-size: 16px; margin-top: 10px; box-sizing: border-box; }
+        input, button, select, textarea { padding: 10px; font-size: 16px; margin-top: 10px; box-sizing: border-box; }
+        textarea { width: 100%; height: 100px; resize: vertical; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #555; }
         th, td { padding: 10px; border: 1px solid #777; text-align: left; }
         th { background: #222; }
         .credentials { background: #000; padding: 5px; color: #0f0; font-family: monospace; border-radius: 3px; }
         ul { margin: 0; padding-left: 20px; }
+        .btn-action { margin: 2px; padding: 5px 10px; font-size: 14px; cursor: pointer; border: none; border-radius: 4px; color: white;}
+        .btn-copy { background: #0066cc; }
+        .btn-enter { background: #28a745; }
     </style>
 </head>
 <body>
@@ -28,11 +32,11 @@
 
         <div class="card">
             <h3>② ルーム内に「アップ場所（フォルダ）」を追加する</h3>
-            <select id="roomSelect" style="width: 35%;">
+            <select id="roomSelect" style="width: 100%;">
                 <option value="">▼ 対象のルームを選択</option>
             </select>
-            <input type="text" id="locationName" placeholder="例：1階エントランス, 黒板 など" style="width: 40%;">
-            <button onclick="createLocation()">場所を追加</button>
+            <textarea id="locationNames" placeholder="場所名を入力（エクセルからのコピペOK！ 改行で複数一気に登録できます）"></textarea>
+            <button onclick="createLocationsBulk()">場所を一括追加</button>
         </div>
 
         <div class="card">
@@ -41,9 +45,9 @@
                 <thead>
                     <tr>
                         <th>ルーム名</th>
-                        <th>ログインID</th>
-                        <th>パスワード</th>
+                        <th>ID / PASS</th>
                         <th>アップ場所（フォルダ）</th>
+                        <th>アクション</th>
                     </tr>
                 </thead>
                 <tbody id="roomList">
@@ -53,7 +57,6 @@
     </div>
 
     <script>
-        // ページ読み込み時にデータを取得して画面を作る
         function loadRooms() {
             fetch('/api/admin/rooms')
                 .then(res => res.json())
@@ -65,59 +68,77 @@
                     roomSelect.innerHTML = '<option value="">▼ 対象のルームを選択</option>';
 
                     rooms.forEach(room => {
-                        // ① プルダウン（セレクトボックス）にルームを追加
                         roomSelect.innerHTML += `<option value="${room.id}">${room.name}</option>`;
-
-                        // ② そのルームに紐づく「アップ場所」を箇条書き（liタグ）にする
                         const locationsHtml = room.locations.map(loc => `<li>${loc.name}</li>`).join('');
 
-                        // ③ テーブルにデータを追加
                         tbody.innerHTML += `
                             <tr>
                                 <td><strong>${room.name}</strong></td>
-                                <td><span class="credentials">${room.login_id}</span></td>
-                                <td><span class="credentials">${room.login_pass}</span></td>
-                                <td>${locationsHtml ? `<ul>${locationsHtml}</ul>` : '<span style="color:#aaa;">(まだ場所がありません)</span>'}</td>
+                                <td>ID: <span class="credentials">${room.login_id}</span><br>PW: <span class="credentials">${room.login_pass}</span></td>
+                                <td>${locationsHtml ? `<ul>${locationsHtml}</ul>` : '<span style="color:#aaa;">(なし)</span>'}</td>
+                                <td>
+                                    <button class="btn-action btn-copy" onclick="copyInfo('${room.name}', '${room.login_id}', '${room.login_pass}')">📋 メール用にコピー</button><br>
+                                    <button class="btn-action btn-enter" onclick="enterRoom('${room.login_id}', '${room.login_pass}')">🚪 このルームに入る</button>
+                                </td>
                             </tr>
                         `;
                     });
                 });
         }
 
-        // ルーム作成処理
         function createRoom() {
             const name = document.getElementById('roomName').value;
             if (!name) return alert('ルーム名を入力してください');
-
             fetch('/api/admin/rooms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomName: name })
             }).then(() => {
                 document.getElementById('roomName').value = '';
-                loadRooms(); // リストを更新
+                loadRooms();
             });
         }
 
-        // アップ場所作成処理（新規追加！）
-        function createLocation() {
+        // --- 複数行を一気に登録する処理 ---
+        function createLocationsBulk() {
             const roomId = document.getElementById('roomSelect').value;
-            const locationName = document.getElementById('locationName').value;
+            const text = document.getElementById('locationNames').value;
 
             if (!roomId) return alert('対象のルームを選択してください');
-            if (!locationName) return alert('アップ場所の名前を入力してください');
+            
+            // 改行でバラバラにし、空白行を除外してリストを作る
+            const names = text.split('\\n').map(n => n.trim()).filter(n => n !== '');
+            if (names.length === 0) return alert('場所名を入力してください');
 
-            fetch('/api/admin/locations', {
+            fetch('/api/admin/locations/bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId: roomId, locationName: locationName })
+                body: JSON.stringify({ roomId: roomId, locationNames: names })
             }).then(() => {
-                document.getElementById('locationName').value = '';
-                loadRooms(); // リストを更新
+                document.getElementById('locationNames').value = '';
+                loadRooms();
             });
         }
 
-        // 最初に一回読み込む
+        // --- メール用コピー機能 ---
+        function copyInfo(name, id, pass) {
+            // 現在のURLを取得してパラメータを付ける
+            const appUrl = window.location.origin;
+            const loginUrl = `${appUrl}/?id=${id}`;
+            const text = `【写真共有ルームのお知らせ】\n\nルーム名：${name}\n\n▼以下のURLを開くとIDが自動入力されます\n${loginUrl}\n\nログインID：${id}\nパスワード：${pass}`;
+
+            navigator.clipboard.writeText(text).then(() => {
+                alert('クリップボードにコピーしました！\nメールやLINEにそのまま貼り付けできます。');
+            }).catch(() => alert('コピーに失敗しました'));
+        }
+
+        // --- 管理画面から直接入室する機能 ---
+        function enterRoom(id, pass) {
+            const appUrl = window.location.origin;
+            // auto=true という秘密の暗号をつけて新しいタブで開く
+            window.open(`${appUrl}/?id=${id}&pass=${pass}&auto=true`, '_blank');
+        }
+
         loadRooms();
     </script>
 </body>

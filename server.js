@@ -97,6 +97,36 @@ app.get('/api/admin/rooms', async (req, res) => {
     }
 });
 
+// --- API: 管理画面用 指定したルームにアップ場所を【複数・一括】作成 ---
+app.post('/api/admin/locations/bulk', async (req, res) => {
+    const { roomId, locationNames } = req.body;
+
+    if (!roomId || !locationNames || locationNames.length === 0) {
+        return res.status(400).send('データが不足しています');
+    }
+
+    try {
+        // 複数一気にデータベースに登録するためのSQL文を作る
+        const values = [roomId];
+        const placeholders = [];
+        let count = 2;
+
+        locationNames.forEach(name => {
+            placeholders.push(`($1, $${count})`);
+            values.push(name);
+            count++;
+        });
+        
+        const query = `INSERT INTO locations (room_id, name) VALUES ${placeholders.join(', ')}`;
+        await pool.query(query, values);
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('一括作成に失敗しました');
+    }
+});
+
 // --- API: 管理画面用 指定したルームにアップ場所を作成（★これを新規追加） ---
 app.post('/api/admin/locations', async (req, res) => {
     const roomId = req.body.roomId;
