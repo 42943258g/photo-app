@@ -16,7 +16,7 @@ const pool = new Pool({
 const upload = multer({ storage: multer.memoryStorage() });
 
 // publicフォルダの中身（HTMLなど）をブラウザに公開
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // --- API: 写真をアップロードしてDBに保存 ---
 app.post('/upload', upload.single('photo'), async (req, res) => {
