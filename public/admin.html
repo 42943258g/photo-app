@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者画面 - ルーム・場所作成</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 20px; background: #333; color: white; }
+        .container { max-width: 900px; margin: auto; }
+        .card { background: #444; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        input, button, select { padding: 10px; font-size: 16px; margin-top: 10px; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #555; }
+        th, td { padding: 10px; border: 1px solid #777; text-align: left; }
+        th { background: #222; }
+        .credentials { background: #000; padding: 5px; color: #0f0; font-family: monospace; border-radius: 3px; }
+        ul { margin: 0; padding-left: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>⚙️ 管理者専用ダッシュボード</h2>
+        
+        <div class="card">
+            <h3>① 新しいルームを作成する</h3>
+            <input type="text" id="roomName" placeholder="例：第1回社内会議, 渋谷現場 など" style="width: 70%;">
+            <button onclick="createRoom()">ルーム作成</button>
+        </div>
+
+        <div class="card">
+            <h3>② ルーム内に「アップ場所（フォルダ）」を追加する</h3>
+            <select id="roomSelect" style="width: 35%;">
+                <option value="">▼ 対象のルームを選択</option>
+            </select>
+            <input type="text" id="locationName" placeholder="例：1階エントランス, 黒板 など" style="width: 40%;">
+            <button onclick="createLocation()">場所を追加</button>
+        </div>
+
+        <div class="card">
+            <h3>作成済みルーム・場所一覧</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ルーム名</th>
+                        <th>ログインID</th>
+                        <th>パスワード</th>
+                        <th>アップ場所（フォルダ）</th>
+                    </tr>
+                </thead>
+                <tbody id="roomList">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // ページ読み込み時にデータを取得して画面を作る
+        function loadRooms() {
+            fetch('/api/admin/rooms')
+                .then(res => res.json())
+                .then(rooms => {
+                    const tbody = document.getElementById('roomList');
+                    const roomSelect = document.getElementById('roomSelect');
+                    
+                    tbody.innerHTML = '';
+                    roomSelect.innerHTML = '<option value="">▼ 対象のルームを選択</option>';
+
+                    rooms.forEach(room => {
+                        // ① プルダウン（セレクトボックス）にルームを追加
+                        roomSelect.innerHTML += `<option value="${room.id}">${room.name}</option>`;
+
+                        // ② そのルームに紐づく「アップ場所」を箇条書き（liタグ）にする
+                        const locationsHtml = room.locations.map(loc => `<li>${loc.name}</li>`).join('');
+
+                        // ③ テーブルにデータを追加
+                        tbody.innerHTML += `
+                            <tr>
+                                <td><strong>${room.name}</strong></td>
+                                <td><span class="credentials">${room.login_id}</span></td>
+                                <td><span class="credentials">${room.login_pass}</span></td>
+                                <td>${locationsHtml ? `<ul>${locationsHtml}</ul>` : '<span style="color:#aaa;">(まだ場所がありません)</span>'}</td>
+                            </tr>
+                        `;
+                    });
+                });
+        }
+
+        // ルーム作成処理
+        function createRoom() {
+            const name = document.getElementById('roomName').value;
+            if (!name) return alert('ルーム名を入力してください');
+
+            fetch('/api/admin/rooms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roomName: name })
+            }).then(() => {
+                document.getElementById('roomName').value = '';
+                loadRooms(); // リストを更新
+            });
+        }
+
+        // アップ場所作成処理（新規追加！）
+        function createLocation() {
+            const roomId = document.getElementById('roomSelect').value;
+            const locationName = document.getElementById('locationName').value;
+
+            if (!roomId) return alert('対象のルームを選択してください');
+            if (!locationName) return alert('アップ場所の名前を入力してください');
+
+            fetch('/api/admin/locations', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ roomId: roomId, locationName: locationName })
+            }).then(() => {
+                document.getElementById('locationName').value = '';
+                loadRooms(); // リストを更新
+            });
+        }
+
+        // 最初に一回読み込む
+        loadRooms();
+    </script>
+</body>
+</html>

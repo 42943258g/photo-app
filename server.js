@@ -2,20 +2,47 @@ const express = require('express');
 const multer = require('multer');
 const { Pool } = require('pg');
 const path = require('path');
+// パスワード自動生成用の機能を追加
+const crypto = require('crypto');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// RenderのPostgreSQLへの接続設定
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL, // 環境変数から読み込むように変更
+    connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
 
-// ↓↓↓ ここから追加 ↓↓↓
-const createTableQuery = `
-    CREATE TABLE IF NOT EXISTS shared_photos (
+const upload = multer({ storage: multer.memoryStorage() });
+
+// フォームデータを受け取るための設定を追加
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// --- データベースの再構築（3つのテーブルを作成） ---
+const createTablesQuery = `
+    -- 1. ルーム管理テーブル
+    CREATE TABLE IF NOT EXISTS rooms (
         id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        login_id VARCHAR(50) UNIQUE NOT NULL,
+        login_pass VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 2. アップ場所（カテゴリ）テーブル
+    CREATE TABLE IF NOT EXISTS locations (
+        id SERIAL PRIMARY KEY,
+        room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 3. 写真保存テーブル（少し進化）
+    CREATE TABLE IF NOT EXISTS new_photos (
+        id SERIAL PRIMARY KEY,
+        location_id INTEGER REFERENCES locations(id) ON DELETE CASCADE,
         title VARCHAR(255),
         image_data BYTEA NOT NULL,
         mime_type VARCHAR(50) NOT NULL,
@@ -23,61 +50,65 @@ const createTableQuery = `
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 `;
-pool.query(createTableQuery)
-    .then(() => console.log('データベースのテーブル準備完了！'))
+pool.query(createTablesQuery)
+    .then(() => console.log('✅ 新しいデータベース構造の準備完了！'))
     .catch(err => console.error('テーブル作成エラー:', err));
-// ↑↑↑ ここまで追加 ↑↑↑
 
-// ファイルをディスクに保存せず、一時的にメモリに置く設定（DB直行のため）
-const upload = multer({ storage: multer.memoryStorage() });
+// --- ランダムな文字列を作る関数 ---
+function generateRandomString(length) {
+    return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length);
+}
 
-// publicフォルダの中身（HTMLなど）をブラウザに公開
-app.use(express.static(path.join(__dirname, 'public')));
+// --- API: 管理画面用 ルームを作成してID/PASSを自動発行 ---
+app.post('/api/admin/rooms', async (req, res) => {
+    const roomName = req.body.roomName;
+    if (!roomName) return res.status(400).send('ルーム名が必要です');
 
-// --- API: 写真をアップロードしてDBに保存 ---
-app.post('/upload', upload.single('photo'), async (req, res) => {
-    if (!req.file) return res.status(400).send('画像が選択されていません。');
-
-    const { mimetype, buffer } = req.file;
-    const title = req.body.title || '無題';
-    const uploader = req.body.uploader || '名無しさん';
+    const loginId = generateRandomString(6);   // 6文字のランダムID
+    const loginPass = generateRandomString(8); // 8文字のランダムPASS
 
     try {
-        const query = `
-            INSERT INTO shared_photos (title, image_data, mime_type, uploaded_by)
-            VALUES ($1, $2, $3, $4)
-        `;
-        await pool.query(query, [title, buffer, mimetype, uploader]);
-        res.redirect('/'); // アップロード後、トップページに戻る
+        const query = 'INSERT INTO rooms (name, login_id, login_pass) VALUES ($1, $2, $3) RETURNING *';
+        const result = await pool.query(query, [roomName, loginId, loginPass]);
+        res.json(result.rows[0]); // 作成したルーム情報を返す
     } catch (err) {
         console.error(err);
-        res.status(500).send('データベースへの保存に失敗しました。');
+        res.status(500).send('ルームの作成に失敗しました');
     }
 });
 
-// --- API: 写真のリスト（IDなどの情報）を取得 ---
-app.get('/api/photos', async (req, res) => {
+// --- API: 管理画面用 ルーム一覧とアップ場所を取得（★ここを上書き修正） ---
+app.get('/api/admin/rooms', async (req, res) => {
     try {
-        // 画像データ自体は重いので、まずは情報だけを取得
-        const result = await pool.query('SELECT id, title, uploaded_by, created_at FROM shared_photos ORDER BY created_at DESC');
-        res.json(result.rows);
+        // ルームとアップ場所を両方データベースから取得
+        const roomsResult = await pool.query('SELECT * FROM rooms ORDER BY created_at DESC');
+        const locationsResult = await pool.query('SELECT * FROM locations ORDER BY created_at ASC');
+
+        // ルームの中に、紐づくアップ場所のデータをくっつける
+        const rooms = roomsResult.rows.map(room => {
+            room.locations = locationsResult.rows.filter(loc => loc.room_id === room.id);
+            return room;
+        });
+        res.json(rooms);
     } catch (err) {
-        res.status(500).send('データ取得エラー');
+        console.error(err);
+        res.status(500).send('ルーム一覧の取得に失敗しました');
     }
 });
 
-// --- API: DBから画像データを取り出して表示 ---
-app.get('/api/image/:id', async (req, res) => {
+// --- API: 管理画面用 指定したルームにアップ場所を作成（★これを新規追加） ---
+app.post('/api/admin/locations', async (req, res) => {
+    const roomId = req.body.roomId;
+    const locationName = req.body.locationName;
+
+    if (!roomId || !locationName) return res.status(400).send('ルームと場所名が必要です');
+
     try {
-        const result = await pool.query('SELECT image_data, mime_type FROM shared_photos WHERE id = $1', [req.params.id]);
-        if (result.rows.length === 0) return res.status(404).send('画像が見つかりません');
-
-        const img = result.rows[0];
-        res.setHeader('Content-Type', img.mime_type); // 「これは画像ですよ」とブラウザに教える
-        res.send(img.image_data); // バイナリデータを送信
+        const query = 'INSERT INTO locations (room_id, name) VALUES ($1, $2) RETURNING *';
+        const result = await pool.query(query, [roomId, locationName]);
+        res.json(result.rows[0]);
     } catch (err) {
-        res.status(500).send('画像読み込みエラー');
+        console.error(err);
+        res.status(500).send('アップ場所の作成に失敗しました');
     }
 });
-
-app.listen(port, () => console.log(`サーバー起動: http://localhost:${port}`));
