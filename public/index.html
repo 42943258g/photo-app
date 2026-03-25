@@ -3,55 +3,166 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>社内写真共有</title>
+    <title>社内写真共有アプリ</title>
     <style>
-        body { font-family: sans-serif; margin: 0; padding: 20px; background: #f4f4f9; }
-        .container { max-width: 800px; margin: auto; }
-        .upload-form { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .upload-form input, .upload-form button { margin-top: 10px; padding: 10px; width: 100%; box-sizing: border-box; }
-        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
-        .photo-card { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
-        .photo-card img { width: 100%; height: 150px; object-fit: cover; }
-        .photo-info { padding: 10px; font-size: 14px; }
+        body { font-family: sans-serif; margin: 0; padding: 20px; background: #f4f4f9; color: #333; }
+        .container { max-width: 600px; margin: auto; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        input, button, select { width: 100%; padding: 10px; margin-top: 10px; box-sizing: border-box; font-size: 16px; }
+        button { background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button.danger { background: #cc0000; margin-top: 5px; padding: 5px; font-size: 12px; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 20px; }
+        .photo-card { background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 5px; text-align: center; }
+        .photo-card img { width: 100%; height: 120px; object-fit: cover; border-radius: 4px; }
+        .photo-info { font-size: 12px; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>📷 社内写真共有</h2>
         
-        <div class="upload-form">
-            <form action="/upload" method="POST" enctype="multipart/form-data">
-                <input type="file" name="photo" accept="image/*" required>
-                <input type="text" name="title" placeholder="写真のタイトルやメモ">
-                <input type="text" name="uploader" placeholder="あなたの名前">
-                <button type="submit">アップロード</button>
-            </form>
+        <div id="loginArea" class="card">
+            <h2>🔐 現場ログイン</h2>
+            <p>管理者から共有されたIDとパスワードを入力してください。</p>
+            <input type="text" id="loginId" placeholder="ログインID">
+            <input type="password" id="loginPass" placeholder="パスワード">
+            <button onclick="login()">ログイン</button>
         </div>
 
-        <div class="gallery" id="gallery">
+        <div id="appArea" style="display: none;">
+            <div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px;">
+                <h3 id="roomTitle" style="margin: 0;">ルーム名</h3>
+                <button onclick="logout()" style="width: auto; background: #666; padding: 5px 10px; margin: 0;">ログアウト</button>
             </div>
+
+            <div class="card">
+                <label>📂 アップ場所（フォルダ）を選択:</label>
+                <select id="locationSelect" onchange="loadPhotos()"></select>
+                
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+                
+                <label>📷 写真をアップロード:</label>
+                <form id="uploadForm">
+                    <input type="file" id="photoInput" accept="image/*" required>
+                    <input type="text" id="photoTitle" placeholder="写真のメモ・タイトル">
+                    <input type="text" id="uploaderName" placeholder="あなたの名前">
+                    <button type="submit" style="background: #28a745;">アップロード</button>
+                </form>
+            </div>
+
+            <div id="gallery" class="gallery">
+                </div>
+        </div>
     </div>
 
     <script>
-        // ページ読み込み時に写真リストを取得
-        fetch('/api/photos')
-            .then(response => response.json())
-            .then(photos => {
-                const gallery = document.getElementById('gallery');
-                photos.forEach(photo => {
-                    // 写真カードのHTMLを作成
-                    const card = document.createElement('div');
-                    card.className = 'photo-card';
-                    card.innerHTML = `
-                        <img src="/api/image/${photo.id}" alt="${photo.title}">
-                        <div class="photo-info">
-                            <strong>${photo.title}</strong><br>
-                            👤 ${photo.uploaded_by}
-                        </div>
-                    `;
-                    gallery.appendChild(card);
-                });
+        let currentRoom = null;
+
+        // --- ログイン処理 ---
+        function login() {
+            const id = document.getElementById('loginId').value;
+            const pass = document.getElementById('loginPass').value;
+
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ loginId: id, loginPass: pass })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    currentRoom = data.room;
+                    document.getElementById('loginArea').style.display = 'none';
+                    document.getElementById('appArea').style.display = 'block';
+                    document.getElementById('roomTitle').innerText = currentRoom.name;
+                    loadLocations(); // 場所リストを読み込む
+                } else {
+                    alert(data.message);
+                }
             });
+        }
+
+        // --- ログアウト処理 ---
+        function logout() {
+            currentRoom = null;
+            document.getElementById('loginId').value = '';
+            document.getElementById('loginPass').value = '';
+            document.getElementById('loginArea').style.display = 'block';
+            document.getElementById('appArea').style.display = 'none';
+            document.getElementById('gallery').innerHTML = '';
+        }
+
+        // --- アップ場所の読み込み ---
+        function loadLocations() {
+            fetch(`/api/locations/${currentRoom.id}`)
+                .then(res => res.json())
+                .then(locations => {
+                    const select = document.getElementById('locationSelect');
+                    select.innerHTML = '<option value="">▼ 選択してください</option>';
+                    locations.forEach(loc => {
+                        select.innerHTML += `<option value="${loc.id}">${loc.name}</option>`;
+                    });
+                });
+        }
+
+        // --- 写真の読み込み ---
+        function loadPhotos() {
+            const locationId = document.getElementById('locationSelect').value;
+            const gallery = document.getElementById('gallery');
+            gallery.innerHTML = ''; // 一旦クリア
+            
+            if (!locationId) return;
+
+            fetch(`/api/photos/${locationId}`)
+                .then(res => res.json())
+                .then(photos => {
+                    photos.forEach(photo => {
+                        gallery.innerHTML += `
+                            <div class="photo-card">
+                                <img src="/api/image/new/${photo.id}" alt="${photo.title}">
+                                <div class="photo-info">
+                                    <strong>${photo.title}</strong><br>👤 ${photo.uploaded_by}
+                                </div>
+                                <button class="danger" onclick="deletePhoto(${photo.id})">削除</button>
+                            </div>
+                        `;
+                    });
+                });
+        }
+
+        // --- 写真のアップロード ---
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault(); // 画面の再読み込みを防ぐ
+            
+            const locationId = document.getElementById('locationSelect').value;
+            if (!locationId) return alert('アップ場所を選択してください');
+
+            const formData = new FormData();
+            formData.append('photo', document.getElementById('photoInput').files[0]);
+            formData.append('locationId', locationId);
+            formData.append('title', document.getElementById('photoTitle').value);
+            formData.append('uploader', document.getElementById('uploaderName').value);
+
+            fetch('/api/upload', { method: 'POST', body: formData })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('photoInput').value = '';
+                        document.getElementById('photoTitle').value = '';
+                        loadPhotos(); // ギャラリーを更新
+                    }
+                });
+        });
+
+        // --- 写真の削除 ---
+        function deletePhoto(id) {
+            if (!confirm('本当にこの画像を削除しますか？')) return;
+
+            fetch(`/api/photos/${id}`, { method: 'DELETE' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) loadPhotos(); // ギャラリーを更新
+                });
+        }
     </script>
 </body>
 </html>
