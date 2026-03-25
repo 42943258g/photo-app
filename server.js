@@ -20,6 +20,14 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ↓↓↓ ここから追加（古いテスト用テーブルのお掃除） ↓↓↓
+const dropOldTableQuery = `DROP TABLE IF EXISTS shared_photos;`;
+
+pool.query(dropOldTableQuery)
+    .then(() => console.log('🗑️ 古いテスト用テーブル（shared_photos）を完全に削除しました！'))
+    .catch(err => console.error('テーブル削除エラー:', err));
+// ↑↑↑ ここまで追加 ↑↑↑
+
 // --- データベースの再構築（3つのテーブルを作成） ---
 const createTablesQuery = `
     -- 1. ルーム管理テーブル
