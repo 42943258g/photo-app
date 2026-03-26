@@ -6,17 +6,29 @@
     <title>管理者画面 - ルーム・場所作成</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 20px; background: #333; color: white; }
-        .container { max-width: 900px; margin: auto; }
+        .container { max-width: 1000px; margin: auto; }
         .card { background: #444; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        input, button, select, textarea { padding: 10px; font-size: 16px; margin-top: 10px; box-sizing: border-box; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #555; }
-        th, td { padding: 10px; border: 1px solid #777; text-align: left; }
-        th { background: #222; }
-        .credentials { background: #000; padding: 5px; color: #0f0; font-family: monospace; border-radius: 3px; }
-        .btn-action { margin: 2px; padding: 5px 10px; font-size: 14px; cursor: pointer; border: none; border-radius: 4px; color: white;}
+        input[type="text"], button, select { padding: 8px; font-size: 15px; box-sizing: border-box; }
+        
+        /* 罫線入りのテーブルデザイン */
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: #fff; color: #333; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #eee; text-align: center; }
+        
+        /* エクセル風のシートデザイン */
+        .excel-table input { width: 100%; border: none; outline: none; background: transparent; padding: 5px; font-size: 15px; }
+        .excel-table input:focus { background: #e6f7ff; }
+        .excel-table td { padding: 0; }
+        .excel-table td.readonly { padding: 8px; background: #f9f9f9; text-align: center; color: #666; }
+        
+        .credentials { background: #eee; padding: 3px 6px; color: #d14; font-family: monospace; border-radius: 3px; font-size: 14px; }
+        .btn-action { margin: 2px; padding: 5px 10px; font-size: 13px; cursor: pointer; border: none; border-radius: 4px; color: white;}
         .btn-copy { background: #0066cc; }
         .btn-enter { background: #28a745; }
-        .sheet-editor { width: 100%; height: 300px; font-family: monospace; font-size: 16px; padding: 10px; line-height: 1.5; white-space: pre; overflow-wrap: normal; overflow-x: scroll; }
+        .btn-del { background: #dc3545; }
+        .btn-del:disabled { background: #aaa; cursor: not-allowed; }
+        
+        .tag { display: inline-block; background: #e0e0e0; padding: 2px 6px; border-radius: 4px; margin: 2px; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -25,21 +37,34 @@
         
         <div class="card">
             <h3>① 新しいルームを作成</h3>
-            <input type="text" id="roomName" placeholder="例：第1回社内会議, 渋谷現場 など" style="width: 70%;">
-            <button onclick="createRoom()">ルーム作成</button>
+            <input type="text" id="roomName" placeholder="例：第1回社内会議, 渋谷現場 など" style="width: 300px;">
+            <button onclick="createRoom()" style="background:#28a745; color:white; border:none; padding:8px 15px; border-radius:4px;">ルーム作成</button>
         </div>
 
         <div class="card">
-            <h3>② フォルダ管理シート（エクセルからコピペ・編集・削除）</h3>
-            <p style="font-size: 14px; color: #bbb;">ルームを選択するとシートが開きます。1行が1つのフォルダ名（セル）として機能します。</p>
-            <select id="roomSelect" onchange="loadEditorSheet()" style="width: 100%;">
+            <h3>② フォルダ管理シート（エクセルからコピペOK）</h3>
+            <select id="roomSelect" onchange="loadEditorSheet()" style="width: 100%; margin-bottom: 10px;">
                 <option value="">▼ 対象のルームを選択してください</option>
             </select>
 
-            <div id="editorArea" style="display: none; background: #555; padding: 15px; border-radius: 8px; margin-top: 15px;">
-                <p style="margin-top: 0; color: #ffcc00; font-size: 13px;">⚠️ 注意：名前を書き換えると「古いフォルダの削除」と「新しいフォルダの作成」とみなされ、中の写真が消えます。</p>
-                <textarea id="sheetEditor" class="sheet-editor" placeholder="エクセルの列をここに貼り付けてください。&#10;改行して名前を打つとフォルダが追加され、行を消すとフォルダが削除されます。"></textarea>
-                <button onclick="syncLocations()" style="background: #28a745; font-size: 18px; font-weight: bold; padding: 15px;">💾 このリストの通りに保存する</button>
+            <div id="editorArea" style="display: none; background: #555; padding: 15px; border-radius: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                    <p style="margin: 0; color: #ffcc00; font-size: 13px;">※写真がアップロード済みのNo（フォルダ）は削除できません。<br>※フォルダ名欄でペースト（Ctrl+V）すると、改行ごとに自動で行が追加されます。</p>
+                    <button onclick="syncLocations()" style="background: #28a745; color: white; border: none; font-size: 16px; font-weight: bold; padding: 10px 20px; border-radius: 4px; cursor: pointer;">💾 リストを保存</button>
+                </div>
+
+                <table class="excel-table" style="margin-top: 10px;">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">No</th>
+                            <th>フォルダ名</th>
+                            <th style="width: 60px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sheetBody">
+                        </tbody>
+                </table>
+                <button onclick="addEmptyRow()" style="margin-top: 10px; padding: 5px 15px;">+ 新規行を追加</button>
             </div>
         </div>
 
@@ -48,9 +73,11 @@
             <table>
                 <thead>
                     <tr>
-                        <th>ルーム名</th>
-                        <th>ID / PASS</th>
-                        <th>アクション</th>
+                        <th style="width: 40px;">No</th>
+                        <th style="width: 150px;">ルーム名</th>
+                        <th style="width: 180px;">ID / PASS</th>
+                        <th>フォルダ一覧</th>
+                        <th style="width: 120px;">アクション</th>
                     </tr>
                 </thead>
                 <tbody id="roomList"></tbody>
@@ -71,14 +98,21 @@
                     roomSelect.innerHTML = '<option value="">▼ 対象のルームを選択してください</option>';
 
                     rooms.forEach(room => {
-                        roomSelect.innerHTML += `<option value="${room.id}">${room.name}</option>`;
+                        roomSelect.innerHTML += `<option value="${room.id}">No.${room.id} : ${room.name}</option>`;
+                        
+                        // フォルダ一覧をタグ状にして表示
+                        const locationsHtml = room.locations.map(loc => `<span class="tag">${loc.name}</span>`).join('');
+
                         tbody.innerHTML += `
                             <tr>
+                                <td style="text-align: center; font-weight: bold;">${room.id}</td>
                                 <td><strong>${room.name}</strong></td>
                                 <td>ID: <span class="credentials">${room.login_id}</span><br>PW: <span class="credentials">${room.login_pass}</span></td>
-                                <td>
-                                    <button class="btn-action btn-copy" onclick="copyInfo('${room.name}', '${room.login_id}', '${room.login_pass}')">📋 メール用にコピー</button><br>
+                                <td style="font-size: 13px;">${locationsHtml || '<span style="color:#aaa;">(なし)</span>'}</td>
+                                <td style="text-align: center;">
+                                    <button class="btn-action btn-copy" onclick="copyInfo('${room.name}', '${room.login_id}', '${room.login_pass}')">📋 コピー</button>
                                     <button class="btn-action btn-enter" onclick="enterRoom('${room.login_id}', '${room.login_pass}')">🚪 入室</button>
+                                    <button class="btn-action btn-del" style="margin-top:5px;" onclick="deleteRoom(${room.id}, '${room.name}')">🗑️ 削除</button>
                                 </td>
                             </tr>
                         `;
@@ -91,40 +125,92 @@
                 });
         }
 
+        // --- シートを描画する ---
         function loadEditorSheet() {
             const roomId = document.getElementById('roomSelect').value;
             const editorArea = document.getElementById('editorArea');
-            const sheetEditor = document.getElementById('sheetEditor');
+            const sheetBody = document.getElementById('sheetBody');
 
-            if (!roomId) {
-                editorArea.style.display = 'none';
-                return;
-            }
+            if (!roomId) { editorArea.style.display = 'none'; return; }
 
             editorArea.style.display = 'block';
             fetch(`/api/locations/${roomId}`)
                 .then(res => res.json())
                 .then(locations => {
-                    // フォルダ名を改行でつないでテキストエリア（シート）に表示
-                    sheetEditor.value = locations.map(loc => loc.name).join('\n');
+                    sheetBody.innerHTML = '';
+                    if (locations.length === 0) addEmptyRow(); // 1行目は空で作る
+                    locations.forEach(loc => {
+                        sheetBody.appendChild(createRow(loc.id, loc.name, loc.photo_count));
+                    });
                 });
         }
 
+        // --- シートの1行を作る関数 ---
+        function createRow(id, name, photoCount) {
+            const tr = document.createElement('tr');
+            const noText = id ? id : '*'; // 新規の行はアスタリスク
+            const hasPhotos = photoCount > 0;
+            const disableAttr = hasPhotos ? 'disabled title="写真が入っているため削除できません"' : '';
+
+            tr.innerHTML = `
+                <td class="readonly">${noText}<input type="hidden" class="loc-id" value="${id || ''}"></td>
+                <td><input type="text" class="loc-name" value="${name || ''}" placeholder="ここに入力・ペースト"></td>
+                <td style="text-align: center; padding: 5px;">
+                    <button class="btn-action btn-del" onclick="this.closest('tr').remove()" ${disableAttr}>削除</button>
+                </td>
+            `;
+            return tr;
+        }
+
+        // 空の行を追加
+        function addEmptyRow() {
+            document.getElementById('sheetBody').appendChild(createRow(null, '', 0));
+        }
+
+        // --- エクセルからのペースト（貼り付け）連動機能 ---
+        document.getElementById('sheetBody').addEventListener('paste', function(e) {
+            if (e.target && e.target.classList.contains('loc-name')) {
+                e.preventDefault(); // 通常の貼り付けをストップ
+                const text = (e.clipboardData || window.clipboardData).getData('text');
+                const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '');
+                if (lines.length === 0) return;
+
+                // 最初の行は今のカーソル位置の入力欄に入れる
+                e.target.value = lines[0];
+
+                // 2行目以降は「新しい行」として下に自動追加する
+                const tbody = document.getElementById('sheetBody');
+                for (let i = 1; i < lines.length; i++) {
+                    tbody.appendChild(createRow(null, lines[i], 0));
+                }
+            }
+        });
+
+        // --- シートの中身を一括保存 ---
         function syncLocations() {
             const roomId = document.getElementById('roomSelect').value;
-            const text = document.getElementById('sheetEditor').value;
-            const names = text.split('\n');
+            const rows = document.querySelectorAll('#sheetBody tr');
+            const locations = [];
+            
+            rows.forEach(tr => {
+                const id = tr.querySelector('.loc-id').value;
+                const name = tr.querySelector('.loc-name').value;
+                if(name.trim()) {
+                    locations.push({ id: id ? parseInt(id) : null, name: name.trim() });
+                }
+            });
 
             fetch(`/api/admin/locations/sync/${roomId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ names: names })
+                body: JSON.stringify({ locations: locations })
             }).then(() => {
-                alert('シートの通りにフォルダを同期・保存しました！');
+                alert('保存しました！');
                 loadRooms();
             });
         }
 
+        // ルーム作成
         function createRoom() {
             const name = document.getElementById('roomName').value;
             if (!name) return alert('ルーム名を入力してください');
@@ -138,6 +224,14 @@
             });
         }
 
+        // ルーム削除
+        function deleteRoom(id, name) {
+            if (!confirm(`本当にルーム「${name}」を削除しますか？\n（※中のフォルダも写真もすべて消去されます。復旧できません！）`)) return;
+            fetch(`/api/admin/rooms/${id}`, { method: 'DELETE' })
+                .then(() => loadRooms());
+        }
+
+        // コピー
         function copyInfo(name, id, pass) {
             const appUrl = window.location.origin;
             const loginUrl = `${appUrl}/?id=${id}`;

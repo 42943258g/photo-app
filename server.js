@@ -181,34 +181,68 @@ app.get('/api/photos/room/:roomId', async (req, res) => {
     }
 });
 
-// --- API: 管理画面用 フォルダ一覧を「シートの通りに」完全同期（上書き） ---
+// --- API: 場所一覧を取得 (★修正：写真が何枚入っているかも一緒に数えて返す) ---
+app.get('/api/locations/:roomId', async (req, res) => {
+    try {
+        const query = `
+            SELECT l.id, l.name, COUNT(p.id) as photo_count 
+            FROM locations l 
+            LEFT JOIN new_photos p ON l.id = p.location_id 
+            WHERE l.room_id = $1 
+            GROUP BY l.id 
+            ORDER BY l.id ASC
+        `;
+        const result = await pool.query(query, [req.params.roomId]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).send('場所の取得に失敗');
+    }
+});
+
+// --- API: 管理画面用 フォルダ一覧を「シートの通りに」完全同期 (★上書き) ---
 app.put('/api/admin/locations/sync/:roomId', async (req, res) => {
     const roomId = req.params.roomId;
-    // 重複を消して、空行をなくしたリストにする
-    const names = [...new Set(req.body.names.map(n => n.trim()).filter(n => n !== ''))];
+    const locations = req.body.locations; // [{id: 1, name: "1階"}, {id: null, name: "新規"}]
 
     try {
-        // 現在DBにあるフォルダを取得
-        const currentResult = await pool.query('SELECT * FROM locations WHERE room_id = $1', [roomId]);
-        const currentLocations = currentResult.rows;
-        const currentNames = currentLocations.map(loc => loc.name);
+        const currentRes = await pool.query('SELECT id FROM locations WHERE room_id = $1', [roomId]);
+        const currentIds = currentRes.rows.map(r => r.id);
+        const incomingIds = locations.map(l => l.id).filter(id => id !== null);
 
-        // ① シートから消えた名前のフォルダをDBからも削除
-        const toDelete = currentLocations.filter(loc => !names.includes(loc.name));
-        for (const loc of toDelete) {
-            await pool.query('DELETE FROM locations WHERE id = $1', [loc.id]);
+        // ① シートから消された行（ID）をデータベースからも削除する
+        const toDelete = currentIds.filter(id => !incomingIds.includes(id));
+        for (const id of toDelete) {
+            // ※念のためバックエンドでも「写真が入っていないか」を最終確認
+            const pRes = await pool.query('SELECT count(*) FROM new_photos WHERE location_id = $1', [id]);
+            if (parseInt(pRes.rows[0].count) === 0) {
+                await pool.query('DELETE FROM locations WHERE id = $1', [id]);
+            }
         }
 
-        // ② シートに新しく追加された名前をDBに作成
-        const toAdd = names.filter(name => !currentNames.includes(name));
-        for (const name of toAdd) {
-            await pool.query('INSERT INTO locations (room_id, name) VALUES ($1, $2)', [roomId, name]);
+        // ② 更新 または 新規追加
+        for (const loc of locations) {
+            if (!loc.name.trim()) continue; // 空欄は無視
+            if (loc.id) {
+                await pool.query('UPDATE locations SET name = $1 WHERE id = $2', [loc.name.trim(), loc.id]);
+            } else {
+                await pool.query('INSERT INTO locations (room_id, name) VALUES ($1, $2)', [roomId, loc.name.trim()]);
+            }
         }
-
         res.json({ success: true });
     } catch (err) {
         console.error(err);
         res.status(500).send('シートの保存に失敗しました');
+    }
+});
+
+// --- API: 管理画面用 ルームを丸ごと削除する (★新規追加) ---
+app.delete('/api/admin/rooms/:id', async (req, res) => {
+    try {
+        // 紐づく場所も写真もすべて道連れで削除されます（テーブル設定のCASCADE機能）
+        await pool.query('DELETE FROM rooms WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).send('ルーム削除に失敗');
     }
 });
 
@@ -239,15 +273,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// --- API: 特定のルームの「アップ場所」リストを取得 ---
-app.get('/api/locations/:roomId', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM locations WHERE room_id = $1 ORDER BY created_at ASC', [req.params.roomId]);
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).send('場所の取得に失敗しました');
-    }
-});
+
 
 // --- API: 写真をアップロード（新しい箱 new_photos へ） ---
 app.post('/api/upload', upload.single('photo'), async (req, res) => {
