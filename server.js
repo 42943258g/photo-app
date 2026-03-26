@@ -13,6 +13,18 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
+// --- データベースの自動アップデート（機能追加用） ---
+const updateDbQuery = `
+    ALTER TABLE rooms ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+    CREATE TABLE IF NOT EXISTS login_logs (
+        id SERIAL PRIMARY KEY,
+        room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+        ip_address VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+`;
+pool.query(updateDbQuery).catch(err => console.error('DBアプデエラー:', err));
+
 const upload = multer({ storage: multer.memoryStorage() });
 const archiver = require('archiver');
 
@@ -249,24 +261,63 @@ app.delete('/api/admin/rooms/:id', async (req, res) => {
     }
 });
 
+// --- API: 管理画面用 IDとパスワードを再発行 ---
+app.put('/api/admin/rooms/:id/credentials', async (req, res) => {
+    // ランダムな英数字を生成
+    const newId = Math.random().toString(36).substring(2, 8);
+    const newPass = Math.random().toString(36).substring(2, 10);
+    try {
+        await pool.query('UPDATE rooms SET login_id = $1, login_pass = $2 WHERE id = $3', [newId, newPass, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).send('再発行失敗');
+    }
+});
+
+// --- API: 管理画面用 ルームの停止・再開を切り替え ---
+app.put('/api/admin/rooms/:id/toggle-active', async (req, res) => {
+    try {
+        await pool.query('UPDATE rooms SET is_active = NOT is_active WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).send('切替失敗');
+    }
+});
+
+// --- API: 管理画面用 ログインログを取得 ---
+app.get('/api/admin/rooms/:id/logs', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT ip_address, created_at FROM login_logs WHERE room_id = $1 ORDER BY created_at DESC LIMIT 50', [req.params.id]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).send('ログ取得失敗');
+    }
+});
+
 // ==========================================
 // 一般ユーザー用 API（ここから追加）
 // ==========================================
 
-// --- API: ログイン処理 ---
+// --- API: ログイン処理（停止チェック＆ログ記録を追加） ---
 app.post('/api/login', async (req, res) => {
     const { loginId, loginPass } = req.body;
-
-    // ★追加：管理者用の特別ログイン（IDとパスワードは自由に変更してください！）
-    if (loginId === 'admin' && loginPass === 'admin123') {
-        return res.json({ success: true, isAdmin: true });
-    }
-
+    if (loginId === 'admin' && loginPass === 'admin123') return res.json({ success: true, isAdmin: true });
+    
     try {
-        const result = await pool.query('SELECT id, name FROM rooms WHERE login_id = $1 AND login_pass = $2', [loginId, loginPass]);
+        const result = await pool.query('SELECT * FROM rooms WHERE login_id = $1 AND login_pass = $2', [loginId, loginPass]);
         if (result.rows.length > 0) {
-            // 一般ユーザーの場合は isAdmin: false を返す
-            res.json({ success: true, isAdmin: false, room: result.rows[0] });
+            const room = result.rows[0];
+            
+            // 停止フラグのチェック
+            if (!room.is_active) {
+                return res.status(403).json({ success: false, message: 'このルームは現在利用停止されています' });
+            }
+
+            // ログインログの記録
+            const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '不明';
+            await pool.query('INSERT INTO login_logs (room_id, ip_address) VALUES ($1, $2)', [room.id, ip]);
+
+            res.json({ success: true, isAdmin: false, room: room });
         } else {
             res.status(401).json({ success: false, message: 'IDまたはパスワードが違います' });
         }
@@ -275,7 +326,6 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ success: false, message: 'サーバーエラー' });
     }
 });
-
 
 
 // --- API: 写真をアップロード（新しい箱 new_photos へ） ---
