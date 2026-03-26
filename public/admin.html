@@ -18,6 +18,10 @@
         .btn-action { margin: 2px; padding: 5px 10px; font-size: 14px; cursor: pointer; border: none; border-radius: 4px; color: white;}
         .btn-copy { background: #0066cc; }
         .btn-enter { background: #28a745; }
+        /* シート用のスタイル */
+        .sheet-input { width: 100%; border: none; outline: none; padding: 8px; font-size: 16px; margin: 0; background: transparent; }
+        .sheet-input:focus { background: #f0f8ff; }
+        .sheet-btn { padding: 6px 12px; margin: 0 2px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer; color: white; }
     </style>
 </head>
 <body>
@@ -25,22 +29,35 @@
         <h2>⚙️ 管理者専用ダッシュボード</h2>
         
         <div class="card">
-            <h3>① 新しいルームを作成する</h3>
+            <h3>① 新しいルームを作成</h3>
             <input type="text" id="roomName" placeholder="例：第1回社内会議, 渋谷現場 など" style="width: 70%;">
             <button onclick="createRoom()">ルーム作成</button>
         </div>
 
         <div class="card">
-            <h3>② ルーム内に「アップ場所（フォルダ）」を追加する</h3>
-            <select id="roomSelect" style="width: 100%;">
-                <option value="">▼ 対象のルームを選択</option>
+            <h3>② アップ場所（フォルダ）の管理・一括追加</h3>
+            <p style="font-size: 14px; color: #bbb;">ルームを選択すると、現在のフォルダ一覧がシート形式で表示されます。</p>
+            <select id="roomSelect" onchange="loadEditorSheet()" style="width: 100%;">
+                <option value="">▼ 対象のルームを選択してください</option>
             </select>
-            <textarea id="locationNames" placeholder="場所名を入力（エクセルからのコピペOK！ 改行で複数一気に登録できます）"></textarea>
-            <button onclick="createLocationsBulk()">場所を一括追加</button>
+
+            <div id="editorArea" style="display: none; background: #555; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                
+                <h4 style="margin-top: 0; margin-bottom: 10px;">📝 現在のフォルダ（名前変更・削除）</h4>
+                <table style="width: 100%; background: #fff; border-collapse: collapse; margin-top: 0;">
+                    <tbody id="sheetBody">
+                        </tbody>
+                </table>
+
+                <h4 style="margin-top: 20px; margin-bottom: 5px;">➕ 新規追加（エクセルから1列コピペOK）</h4>
+                <textarea id="locationNames" placeholder="追加したいフォルダ名を貼り付け（改行で複数OK）"></textarea>
+                <button onclick="createLocationsBulk()" style="background: #28a745;">一括追加する</button>
+
+            </div>
         </div>
 
         <div class="card">
-            <h3>作成済みルーム・場所一覧</h3>
+            <h3>作成済みルーム一覧</h3>
             <table>
                 <thead>
                     <tr>
@@ -57,7 +74,10 @@
     </div>
 
     <script>
+        // ページ読み込み＆更新用
         function loadRooms() {
+            const currentSelectValue = document.getElementById('roomSelect').value;
+
             fetch('/api/admin/rooms')
                 .then(res => res.json())
                 .then(rooms => {
@@ -65,34 +85,20 @@
                     const roomSelect = document.getElementById('roomSelect');
                     
                     tbody.innerHTML = '';
-                    roomSelect.innerHTML = '<option value="">▼ 対象のルームを選択</option>';
+                    roomSelect.innerHTML = '<option value="">▼ 対象のルームを選択してください</option>';
 
                     rooms.forEach(room => {
+                        // プルダウンに追加
                         roomSelect.innerHTML += `<option value="${room.id}">${room.name}</option>`;
                         
-                        // ★ここを変更：リスト(li)ではなく、編集可能なシート(table)形式にする
-                        let locationsSheet = '<span style="color:#aaa;">(なし)</span>';
-                        if (room.locations && room.locations.length > 0) {
-                            locationsSheet = `<table style="width:100%; background:#fff; color:#000; margin:0;">
-                                ${room.locations.map(loc => `
-                                    <tr>
-                                        <td style="padding:5px; border:1px solid #ccc;">
-                                            <input type="text" id="loc_name_${loc.id}" value="${loc.name}" style="width:100%; margin:0; padding:5px; font-size:14px;">
-                                        </td>
-                                        <td style="width: 110px; padding:5px; border:1px solid #ccc; text-align:center;">
-                                            <button onclick="updateLocation(${loc.id})" style="background:#28a745; color:#fff; padding:5px; margin:0; font-size:12px; border:none; border-radius:3px; cursor:pointer;">保存</button>
-                                            <button onclick="deleteLocation(${loc.id})" style="background:#dc3545; color:#fff; padding:5px; margin:0; font-size:12px; border:none; border-radius:3px; cursor:pointer;">削除</button>
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </table>`;
-                        }
+                        // 一覧表の表示はスッキリさせる（箇条書きに戻す）
+                        const locationsHtml = room.locations.map(loc => `<li>${loc.name}</li>`).join('');
 
                         tbody.innerHTML += `
                             <tr>
                                 <td><strong>${room.name}</strong></td>
                                 <td>ID: <span class="credentials">${room.login_id}</span><br>PW: <span class="credentials">${room.login_pass}</span></td>
-                                <td style="padding:0;">${locationsSheet}</td>
+                                <td>${locationsHtml ? `<ul>${locationsHtml}</ul>` : '<span style="color:#aaa;">(なし)</span>'}</td>
                                 <td>
                                     <button class="btn-action btn-copy" onclick="copyInfo('${room.name}', '${room.login_id}', '${room.login_pass}')">📋 メール用にコピー</button><br>
                                     <button class="btn-action btn-enter" onclick="enterRoom('${room.login_id}', '${room.login_pass}')">🚪 このルームに入る</button>
@@ -100,26 +106,50 @@
                             </tr>
                         `;
                     });
+
+                    // 更新前に選んでいたルームを再選択し、シートを再描画
+                    if (currentSelectValue) {
+                        document.getElementById('roomSelect').value = currentSelectValue;
+                        loadEditorSheet(); 
+                    }
                 });
         }
 
-        // --- 追加：場所の変更を保存 ---
-        function updateLocation(id) {
-            const newName = document.getElementById(`loc_name_${id}`).value;
-            fetch(`/api/admin/locations/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newName })
-            }).then(() => alert('保存しました！'));
-        }
+        // --- ルームを選択したときに「シート」を表示する処理 ---
+        function loadEditorSheet() {
+            const roomId = document.getElementById('roomSelect').value;
+            const editorArea = document.getElementById('editorArea');
+            const sheetBody = document.getElementById('sheetBody');
 
-        // --- 追加：場所を削除 ---
-        function deleteLocation(id) {
-            if (!confirm('本当にこの場所を削除しますか？\n（※中の写真も消えてしまいます）')) return;
-            fetch(`/api/admin/locations/${id}`, { method: 'DELETE' })
-                .then(() => loadRooms());
-        }
+            if (!roomId) {
+                editorArea.style.display = 'none';
+                return;
+            }
 
+            editorArea.style.display = 'block';
+            fetch(`/api/locations/${roomId}`)
+                .then(res => res.json())
+                .then(locations => {
+                    sheetBody.innerHTML = '';
+                    if (locations.length === 0) {
+                        sheetBody.innerHTML = '<tr><td style="color:#999; padding:15px; text-align:center;">まだフォルダがありません。下から追加してください。</td></tr>';
+                    } else {
+                        locations.forEach(loc => {
+                            sheetBody.innerHTML += `
+                                <tr style="border-bottom: 1px solid #ddd;">
+                                    <td style="padding: 0;">
+                                        <input type="text" id="loc_name_${loc.id}" value="${loc.name}" class="sheet-input">
+                                    </td>
+                                    <td style="width: 140px; text-align: center; padding: 5px;">
+                                        <button onclick="updateLocation(${loc.id})" class="sheet-btn" style="background: #0066cc;">保存</button>
+                                        <button onclick="deleteLocation(${loc.id})" class="sheet-btn" style="background: #dc3545;">削除</button>
+                                    </td>
+                                </tr>
+                            `;
+                        });
+                    }
+                });
+        }
 
         function createRoom() {
             const name = document.getElementById('roomName').value;
@@ -134,15 +164,13 @@
             });
         }
 
-        // --- 複数行を一気に登録する処理 ---
         function createLocationsBulk() {
             const roomId = document.getElementById('roomSelect').value;
             const text = document.getElementById('locationNames').value;
 
             if (!roomId) return alert('対象のルームを選択してください');
             
-            // 改行でバラバラにし、空白行を除外してリストを作る
-            const names = text.split('\\n').map(n => n.trim()).filter(n => n !== '');
+            const names = text.split('\n').map(n => n.trim()).filter(n => n !== '');
             if (names.length === 0) return alert('場所名を入力してください');
 
             fetch('/api/admin/locations/bulk', {
@@ -150,30 +178,44 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomId: roomId, locationNames: names })
             }).then(() => {
-                document.getElementById('locationNames').value = '';
-                loadRooms();
+                document.getElementById('locationNames').value = ''; // 入力欄をクリア
+                loadRooms(); // 一覧とシートを更新
             });
         }
 
-        // --- メール用コピー機能 ---
+        function updateLocation(id) {
+            const newName = document.getElementById(`loc_name_${id}`).value;
+            fetch(`/api/admin/locations/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName })
+            }).then(() => {
+                // 保存完了後、シートのハイライト等の演出を入れることもできますが今回はシンプルに更新
+                loadRooms(); 
+            });
+        }
+
+        function deleteLocation(id) {
+            if (!confirm('本当にこの場所を削除しますか？\n（※中の写真も消えてしまいます）')) return;
+            fetch(`/api/admin/locations/${id}`, { method: 'DELETE' })
+                .then(() => loadRooms());
+        }
+
         function copyInfo(name, id, pass) {
-            // 現在のURLを取得してパラメータを付ける
             const appUrl = window.location.origin;
             const loginUrl = `${appUrl}/?id=${id}`;
             const text = `【写真共有ルームのお知らせ】\n\nルーム名：${name}\n\n▼以下のURLを開くとIDが自動入力されます\n${loginUrl}\n\nログインID：${id}\nパスワード：${pass}`;
-
             navigator.clipboard.writeText(text).then(() => {
                 alert('クリップボードにコピーしました！\nメールやLINEにそのまま貼り付けできます。');
             }).catch(() => alert('コピーに失敗しました'));
         }
 
-        // --- 管理画面から直接入室する機能 ---
         function enterRoom(id, pass) {
             const appUrl = window.location.origin;
-            // auto=true という秘密の暗号をつけて新しいタブで開く
             window.open(`${appUrl}/?id=${id}&pass=${pass}&auto=true`, '_blank');
         }
 
+        // 初期読み込み
         loadRooms();
     </script>
 </body>
