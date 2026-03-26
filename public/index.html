@@ -73,7 +73,12 @@
         function login() {
             const id = document.getElementById('loginId').value;
             const pass = document.getElementById('loginPass').value;
-            if (id === 'admin' && pass === 'admin123') return window.location.href = '/admin.html';
+
+            if (id === 'admin' && pass === 'admin123') {
+                sessionStorage.setItem('isAdmin', 'true'); // 合鍵を渡す
+                window.location.href = '/admin.html';
+                return;
+            }
             
             fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ loginId: id, loginPass: pass }) })
             .then(res => res.json())

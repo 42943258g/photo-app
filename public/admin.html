@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
+    <script>
+        if (sessionStorage.getItem('isAdmin') !== 'true') {
+            alert('不正なアクセスです。ログイン画面から入り直してください。');
+            window.location.replace('/'); // トップページに強制送還
+        }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理者画面 - ルーム・場所作成</title>
@@ -43,6 +49,7 @@
 <body>
     <div class="container">
         <h2>⚙️ 管理者専用ダッシュボード</h2>
+        <button onclick="adminLogout()" style="background:#666; color:white; border:none; padding:5px 10px; border-radius:4px; float:right;">ログアウト</button>
         
         <div class="card">
             <h3>① 新しいルームを作成</h3>
@@ -133,6 +140,11 @@
                 });
                 if (currentSelectValue) { document.getElementById('roomSelect').value = currentSelectValue; loadEditorSheet(); }
             });
+        }
+
+        function adminLogout() {
+            sessionStorage.removeItem('isAdmin'); // 合鍵を捨てる
+            window.location.href = '/'; // トップに戻る
         }
 
         // --- 新機能：ID/PW再発行 ---
