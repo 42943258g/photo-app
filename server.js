@@ -14,6 +14,7 @@ const pool = new Pool({
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
+const archiver = require('archiver');
 
 // フォームデータを受け取るための設定を追加
 app.use(express.urlencoded({ extended: true }));
@@ -78,14 +79,16 @@ app.post('/api/admin/rooms', async (req, res) => {
     }
 });
 
-// --- API: 管理画面用 ルーム一覧とアップ場所を取得（★ここを上書き修正） ---
+// --- API: 管理画面用 ルーム一覧とアップ場所（写真枚数付き）を取得 ---
 app.get('/api/admin/rooms', async (req, res) => {
     try {
-        // ルームとアップ場所を両方データベースから取得
-        const roomsResult = await pool.query('SELECT * FROM rooms ORDER BY created_at DESC');
-        const locationsResult = await pool.query('SELECT * FROM locations ORDER BY created_at ASC');
-
-        // ルームの中に、紐づくアップ場所のデータをくっつける
+        const roomsResult = await pool.query('SELECT * FROM rooms ORDER BY id ASC');
+        const locationsResult = await pool.query(`
+            SELECT l.*, COUNT(p.id) as photo_count 
+            FROM locations l 
+            LEFT JOIN new_photos p ON l.id = p.location_id 
+            GROUP BY l.id ORDER BY l.id ASC
+        `);
         const rooms = roomsResult.rows.map(room => {
             room.locations = locationsResult.rows.filter(loc => loc.room_id === room.id);
             return room;
@@ -93,7 +96,7 @@ app.get('/api/admin/rooms', async (req, res) => {
         res.json(rooms);
     } catch (err) {
         console.error(err);
-        res.status(500).send('ルーム一覧の取得に失敗しました');
+        res.status(500).send('取得失敗');
     }
 });
 
@@ -321,6 +324,58 @@ app.delete('/api/photos/:id', async (req, res) => {
         res.status(500).json({ success: false, message: '削除に失敗しました' });
     }
 });
+
+// --- API: ルーム名を変更する ---
+app.put('/api/admin/rooms/:id', async (req, res) => {
+    try {
+        await pool.query('UPDATE rooms SET name = $1 WHERE id = $2', [req.body.name, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).send('更新失敗');
+    }
+});
+
+// --- API: 投稿済みの写真の「メモ（タイトル）」を変更する ---
+app.put('/api/photos/:id/memo', async (req, res) => {
+    try {
+        await pool.query('UPDATE new_photos SET title = $1 WHERE id = $2', [req.body.title, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).send('更新失敗');
+    }
+});
+
+// --- API: ルーム内の全写真をZIPで一括ダウンロード ---
+app.get('/api/admin/rooms/:roomId/download', async (req, res) => {
+    try {
+        const query = `
+            SELECT np.id, np.image_data, np.mime_type, np.title, l.name as loc_name
+            FROM new_photos np
+            JOIN locations l ON np.location_id = l.id
+            WHERE l.room_id = $1
+        `;
+        const result = await pool.query(query, [req.params.roomId]);
+        if (result.rows.length === 0) return res.status(404).send('写真がありません');
+
+        res.attachment(`room_${req.params.roomId}_photos.zip`); // ダウンロードされるファイル名
+        const archive = archiver('zip', { zlib: { level: 9 } }); // 圧縮レベル最大
+        archive.pipe(res);
+
+        // フォルダごとに分けてZIPに詰める
+        result.rows.forEach((photo, index) => {
+            const ext = photo.mime_type.split('/')[1] || 'jpg';
+            // 例: "1階/写真_1.jpg" のようにフォルダ階層を作る
+            const filename = `${photo.loc_name}/${photo.title || '無題'}_${photo.id}.${ext}`;
+            archive.append(photo.image_data, { name: filename });
+        });
+        
+        archive.finalize();
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('ZIP作成失敗');
+    }
+});
+
 // ==========================================
 // 一般ユーザー用 API（ここまで追加）
 // ==========================================
