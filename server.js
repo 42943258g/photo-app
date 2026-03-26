@@ -181,6 +181,37 @@ app.get('/api/photos/room/:roomId', async (req, res) => {
     }
 });
 
+// --- API: 管理画面用 フォルダ一覧を「シートの通りに」完全同期（上書き） ---
+app.put('/api/admin/locations/sync/:roomId', async (req, res) => {
+    const roomId = req.params.roomId;
+    // 重複を消して、空行をなくしたリストにする
+    const names = [...new Set(req.body.names.map(n => n.trim()).filter(n => n !== ''))];
+
+    try {
+        // 現在DBにあるフォルダを取得
+        const currentResult = await pool.query('SELECT * FROM locations WHERE room_id = $1', [roomId]);
+        const currentLocations = currentResult.rows;
+        const currentNames = currentLocations.map(loc => loc.name);
+
+        // ① シートから消えた名前のフォルダをDBからも削除
+        const toDelete = currentLocations.filter(loc => !names.includes(loc.name));
+        for (const loc of toDelete) {
+            await pool.query('DELETE FROM locations WHERE id = $1', [loc.id]);
+        }
+
+        // ② シートに新しく追加された名前をDBに作成
+        const toAdd = names.filter(name => !currentNames.includes(name));
+        for (const name of toAdd) {
+            await pool.query('INSERT INTO locations (room_id, name) VALUES ($1, $2)', [roomId, name]);
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('シートの保存に失敗しました');
+    }
+});
+
 // ==========================================
 // 一般ユーザー用 API（ここから追加）
 // ==========================================
